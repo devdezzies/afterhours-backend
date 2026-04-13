@@ -7,37 +7,19 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
-class AuthController extends Controller
+class AdminAuthController extends Controller
 {
-    public function register(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8'],
-        ]);
-
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => $validated['password'],
-            'role' => 'customer',
-        ]);
-
-        return $this->issueTokenResponse($user, 'mobile', 201);
-    }
-
     public function login(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
         if (!Auth::attempt([
             'email' => $validated['email'],
             'password' => $validated['password'],
-            'role' => 'customer',
+            'role' => 'admin',
         ])) {
             return response()->json([
                 'message' => 'Invalid credentials.',
@@ -47,7 +29,7 @@ class AuthController extends Controller
         /** @var User $user */
         $user = Auth::user();
 
-        return $this->issueTokenResponse($user, 'mobile');
+        return $this->issueTokenResponse($user, 'admin');
     }
 
     public function logout(Request $request): JsonResponse
@@ -66,10 +48,10 @@ class AuthController extends Controller
         return response()->json([
             'token' => $token,
             'user'  => [
-                'id'    => $user->id,
-                'name'  => $user->name,
+                'id' => $user->id,
+                'name' => $user->name,
                 'email' => $user->email,
-                'role'  => $user->role,
+                'role' => $user->role,
             ],
         ], $status);
     }

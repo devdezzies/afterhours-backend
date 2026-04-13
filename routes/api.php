@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Controllers\AdminOrderController;
+use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,8 +15,16 @@ Route::get('/products/{id}', [ProductController::class, 'show']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/orders', [OrderController::class, 'index']);
 });
 
+Route::prefix('admin')->group(function () {
+    Route::post('/auth/login', [AdminAuthController::class, 'login']);
+
+    Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+        Route::post('/auth/logout', [AdminAuthController::class, 'logout']);
+        Route::get('/orders', [AdminOrderController::class, 'index']);
+    });
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
     Route::post('/products/', [ProductController::class, 'create']);
     Route::put('/products/{id}', [ProductController::class, 'update']);
