@@ -1,0 +1,346 @@
+[1mdiff --git a/.env.example b/.env.example[m
+[1mindex c0660ea..056de7f 100644[m
+[1m--- a/.env.example[m
+[1m+++ b/.env.example[m
+[36m@@ -19,6 +19,9 @@[m [mLOG_CHANNEL=stack[m
+ LOG_STACK=single[m
+ LOG_DEPRECATIONS_CHANNEL=null[m
+ LOG_LEVEL=debug[m
+[32m+[m[32mLOG_API_ERRORS_STACK=api_errors_daily[m
+[32m+[m[32mLOG_API_ERRORS_LEVEL=debug[m
+[32m+[m[32mLOG_API_ERRORS_DAYS=14[m
+ [m
+ DB_CONNECTION=sqlite[m
+ # DB_HOST=127.0.0.1[m
+[1mdiff --git a/app/Http/Controllers/AuthController.php b/app/Http/Controllers/AuthController.php[m
+[1mindex ad93005..d8ded5d 100644[m
+[1m--- a/app/Http/Controllers/AuthController.php[m
+[1m+++ b/app/Http/Controllers/AuthController.php[m
+[36m@@ -6,7 +6,6 @@[m
+ use Illuminate\Http\JsonResponse;[m
+ use Illuminate\Http\Request;[m
+ use Illuminate\Support\Facades\Auth;[m
+[31m-use Illuminate\Support\Facades\Hash;[m
+ [m
+ class AuthController extends Controller[m
+ {[m
+[36m@@ -25,17 +24,7 @@[m [mpublic function register(Request $request): JsonResponse[m
+             'role' => 'customer',[m
+         ]);[m
+ [m
+[31m-        $token = $user->createToken('mobile')->plainTextToken;[m
+[31m-[m
+[31m-        return response()->json([[m
+[31m-            'token' => $token,[m
+[31m-            'user'  => [[m
+[31m-                'id'    => $user->id,[m
+[31m-                'name'  => $user->name,[m
+[31m-                'email' => $user->email,[m
+[31m-                'role'  => $user->role,[m
+[31m-            ],[m
+[31m-        ], 201);[m
+[32m+[m[32m        return $this->issueTokenResponse($user, 'mobile', 201);[m
+     }[m
+ [m
+     public function login(Request $request): JsonResponse[m
+[36m@@ -45,7 +34,11 @@[m [mpublic function login(Request $request): JsonResponse[m
+             'password' => ['required', 'string'],[m
+         ]);[m
+ [m
+[31m-        if (!Auth::attempt($validated)) {[m
+[32m+[m[32m        if (!Auth::attempt([[m
+[32m+[m[32m            'email' => $validated['email'],[m
+[32m+[m[32m            'password' => $validated['password'],[m
+[32m+[m[32m            'role' => 'customer',[m
+[32m+[m[32m        ])) {[m
+             return response()->json([[m
+                 'message' => 'Invalid credentials.',[m
+             ], 401);[m
+[36m@@ -54,9 +47,21 @@[m [mpublic function login(Request $request): JsonResponse[m
+         /** @var User $user */[m
+         $user = Auth::user();[m
+ [m
+[31m-        $user->tokens()->where('name', 'mobile')->delete();[m
+[32m+[m[32m        return $this->issueTokenResponse($user, 'mobile');[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    public function logout(Request $request): JsonResponse[m
+[32m+[m[32m    {[m
+[32m+[m[32m        $request->user()->currentAccessToken()->delete();[m
+[32m+[m
+[32m+[m[32m        return response()->json(['message' => 'Logged out.']);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    private function issueTokenResponse(User $user, string $tokenName, int $status = 200): JsonResponse[m
+[32m+[m[32m    {[m
+[32m+[m[32m        $user->tokens()->where('name', $tokenName)->delete();[m
+ [m
+[31m-        $token = $user->createToken('mobile')->plainTextToken;[m
+[32m+[m[32m        $token = $user->createToken($tokenName)->plainTextToken;[m
+ [m
+         return response()->json([[m
+             'token' => $token,[m
+[36m@@ -66,13 +71,6 @@[m [mpublic function login(Request $request): JsonResponse[m
+                 'email' => $user->email,[m
+                 'role'  => $user->role,[m
+             ],[m
+[31m-        ]);[m
+[31m-    }[m
+[31m-[m
+[31m-    public function logout(Request $request): JsonResponse[m
+[31m-    {[m
+[31m-        $request->user()->currentAccessToken()->delete();[m
+[31m-[m
+[31m-        return response()->json(['message' => 'Logged out.']);[m
+[32m+[m[32m        ], $status);[m
+     }[m
+ }[m
+\ No newline at end of file[m
+[1mdiff --git a/app/Models/User.php b/app/Models/User.php[m
+[1mindex 15f854e..4438bcc 100644[m
+[1m--- a/app/Models/User.php[m
+[1m+++ b/app/Models/User.php[m
+[36m@@ -32,4 +32,9 @@[m [mprotected function casts(): array[m
+             'password' => 'hashed', [m
+         ];[m
+     }[m
+[31m-}[m
+\ No newline at end of file[m
+[32m+[m
+[32m+[m[32m    public function orders()[m
+[32m+[m[32m    {[m
+[32m+[m[32m        return $this->hasMany(Order::class);[m
+[32m+[m[32m    }[m
+[32m+[m[32m}[m
+[1mdiff --git a/bootstrap/app.php b/bootstrap/app.php[m
+[1mindex 492e92f..a9bf08c 100644[m
+[1m--- a/bootstrap/app.php[m
+[1m+++ b/bootstrap/app.php[m
+[36m@@ -3,6 +3,8 @@[m
+ use Illuminate\Foundation\Application;[m
+ use Illuminate\Foundation\Configuration\Exceptions;[m
+ use Illuminate\Foundation\Configuration\Middleware;[m
+[32m+[m[32muse Illuminate\Support\Facades\Log;[m
+[32m+[m[32muse Illuminate\Support\Str;[m
+ [m
+ return Application::configure(basePath: dirname(__DIR__))[m
+     ->withRouting([m
+[36m@@ -14,50 +16,136 @@[m
+     )[m
+     ->withMiddleware(function (Middleware $middleware) {[m
+         $middleware->prepend(\App\Http\Middleware\JsonResponse::class);[m
+[32m+[m[32m        $middleware->appendToGroup('api', \App\Http\Middleware\LogApiErrorResponses::class);[m
+         $middleware->alias([[m
+             'admin' => \App\Http\Middleware\IsAdmin::class,[m
+         ]);[m
+     })[m
+     ->withExceptions(function (Exceptions $exceptions): void {[m
+[32m+[m[32m        $resolveUserId = function (\Illuminate\Http\Request $request): mixed {[m
+[32m+[m[32m            try {[m
+[32m+[m[32m                return $request->user()?->getAuthIdentifier();[m
+[32m+[m[32m            } catch (\Throwable) {[m
+[32m+[m[32m                return null;[m
+[32m+[m[32m            }[m
+[32m+[m[32m        };[m
+[32m+[m
+[32m+[m[32m        $jsonResponse = static function (array $payload, int $status, array $headers = []): \Illuminate\Http\JsonResponse {[m
+[32m+[m[32m            return new \Illuminate\Http\JsonResponse($payload, $status, $headers);[m
+[32m+[m[32m        };[m
+[32m+[m
+[32m+[m[32m        $logException = function ([m
+[32m+[m[32m            \Throwable $e,[m
+[32m+[m[32m            \Illuminate\Http\Request $request,[m
+[32m+[m[32m            int $status,[m
+[32m+[m[32m            array $extra = [][m
+[32m+[m[32m        ) use ($resolveUserId): void {[m
+[32m+[m[32m            if (!$request->is('api/*')) {[m
+[32m+[m[32m                return;[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            $requestId = $request->attributes->get('request_id');[m
+[32m+[m
+[32m+[m[32m            if (!is_string($requestId) || $requestId === '') {[m
+[32m+[m[32m                $requestId = (string) Str::uuid();[m
+[32m+[m[32m                $request->attributes->set('request_id', $requestId);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            $context = array_merge([[m
+[32m+[m[32m                'request_id' => $requestId,[m
+[32m+[m[32m                'method' => $request->method(),[m
+[32m+[m[32m                'route' => $request->route()?->uri(),[m
+[32m+[m[32m                'path' => $request->path(),[m
+[32m+[m[32m                'full_url' => $request->fullUrl(),[m
+[32m+[m[32m                'status' => $status,[m
+[32m+[m[32m                'user_id' => $resolveUserId($request),[m
+[32m+[m[32m                'ip' => $request->ip(),[m
+[32m+[m[32m                'query' => $request->query(),[m
+[32m+[m[32m                'body' => $request->except([[m
+[32m+[m[32m                    '_token',[m
+[32m+[m[32m                    'password',[m
+[32m+[m[32m                    'password_confirmation',[m
+[32m+[m[32m                    'token',[m
+[32m+[m[32m                    'access_token',[m
+[32m+[m[32m                    'refresh_token',[m
+[32m+[m[32m                    'authorization',[m
+[32m+[m[32m                ]),[m
+[32m+[m[32m                'exception' => $e::class,[m
+[32m+[m[32m                'message' => $e->getMessage(),[m
+[32m+[m[32m            ], $extra);[m
+[32m+[m
+[32m+[m[32m            if (!app()->isProduction()) {[m
+[32m+[m[32m                $context['trace'] = $e->getTraceAsString();[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            Log::channel('api_errors')->error('API exception rendered.', $context);[m
+[32m+[m[32m        };[m
+[32m+[m
+[32m+[m[32m        $errorHeaders = function (\Illuminate\Http\Request $request): array {[m
+[32m+[m[32m            $requestId = $request->attributes->get('request_id');[m
+[32m+[m
+[32m+[m[32m            if (!is_string($requestId) || $requestId === '') {[m
+[32m+[m[32m                $requestId = (string) Str::uuid();[m
+[32m+[m[32m                $request->attributes->set('request_id', $requestId);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            return [[m
+[32m+[m[32m                'X-Request-Id' => $requestId,[m
+[32m+[m[32m            ];[m
+[32m+[m[32m        };[m
+[32m+[m
+         $exceptions->render(function ([m
+             \Illuminate\Validation\ValidationException $e,[m
+             \Illuminate\Http\Request $request[m
+[31m-        ) {[m
+[31m-            return response()->json([[m
+[32m+[m[32m        ) use ($jsonResponse, $logException, $errorHeaders) {[m
+[32m+[m[32m            $logException($e, $request, 422, ['errors' => $e->errors()]);[m
+[32m+[m
+[32m+[m[32m            return $jsonResponse([[m
+                 'message' => 'The given data was invalid.',[m
+                 'errors'  => $e->errors(),[m
+[31m-            ], 422);[m
+[32m+[m[32m            ], 422, $errorHeaders($request));[m
+         });[m
+ [m
+         $exceptions->render(function ([m
+             \Illuminate\Auth\AuthenticationException $e,[m
+             \Illuminate\Http\Request $request[m
+[31m-        ) {[m
+[31m-            return response()->json(['message' => 'Unauthenticated.'], 401);[m
+[32m+[m[32m        ) use ($jsonResponse, $logException, $errorHeaders) {[m
+[32m+[m[32m            $logException($e, $request, 401);[m
+[32m+[m
+[32m+[m[32m            return $jsonResponse(['message' => 'Unauthenticated.'], 401, $errorHeaders($request));[m
+         });[m
+ [m
+         $exceptions->render(function ([m
+             \Illuminate\Auth\Access\AuthorizationException $e,[m
+             \Illuminate\Http\Request $request[m
+[31m-        ) {[m
+[31m-            return response()->json(['message' => 'Forbidden.'], 403);[m
+[32m+[m[32m        ) use ($jsonResponse, $logException, $errorHeaders) {[m
+[32m+[m[32m            $logException($e, $request, 403);[m
+[32m+[m
+[32m+[m[32m            return $jsonResponse(['message' => 'Forbidden.'], 403, $errorHeaders($request));[m
+         });[m
+ [m
+         $exceptions->render(function ([m
+             \Illuminate\Database\Eloquent\ModelNotFoundException $e,[m
+             \Illuminate\Http\Request $request[m
+[31m-        ) {[m
+[31m-            return response()->json(['message' => 'Resource not found.'], 404);[m
+[32m+[m[32m        ) use ($jsonResponse, $logException, $errorHeaders) {[m
+[32m+[m[32m            $logException($e, $request, 404);[m
+[32m+[m
+[32m+[m[32m            return $jsonResponse(['message' => 'Resource not found.'], 404, $errorHeaders($request));[m
+         });[m
+ [m
+         $exceptions->render(function ([m
+             \Throwable $e,[m
+             \Illuminate\Http\Request $request[m
+[31m-        ) {[m
+[32m+[m[32m        ) use ($jsonResponse, $logException, $errorHeaders) {[m
+[32m+[m[32m            $logException($e, $request, 500);[m
+[32m+[m
+             $message = app()->isProduction()[m
+                 ? 'An unexpected error occurred.'[m
+                 : $e->getMessage();[m
+ [m
+[31m-            return response()->json(['message' => $message], 500);[m
+[32m+[m[32m            return $jsonResponse([[m
+[32m+[m[32m                'message' => $message,[m
+[32m+[m[32m                'exception' => $e::class,[m
+[32m+[m[32m            ], 500, $errorHeaders($request));[m
+         });[m
+     })->create();[m
+[1mdiff --git a/config/database.php b/config/database.php[m
+[1mindex 264c251..e90b088 100644[m
+[1m--- a/config/database.php[m
+[1m+++ b/config/database.php[m
+[36m@@ -17,7 +17,7 @@[m
+     |[m
+     */[m
+ [m
+[31m-    'default' => env('DB_CONNECTION', 'psql'),[m
+[32m+[m[32m    'default' => env('DB_CONNECTION', 'pgsql'),[m
+ [m
+     /*[m
+     |--------------------------------------------------------------------------[m
+[1mdiff --git a/config/logging.php b/config/logging.php[m
+[1mindex 9e998a4..0e7aed8 100644[m
+[1m--- a/config/logging.php[m
+[1m+++ b/config/logging.php[m
+[36m@@ -73,6 +73,20 @@[m
+             'replace_placeholders' => true,[m
+         ],[m
+ [m
+[32m+[m[32m        'api_errors' => [[m
+[32m+[m[32m            'driver' => 'stack',[m
+[32m+[m[32m            'channels' => explode(',', (string) env('LOG_API_ERRORS_STACK', 'api_errors_daily')),[m
+[32m+[m[32m            'ignore_exceptions' => false,[m
+[32m+[m[32m        ],[m
+[32m+[m
+[32m+[m[32m        'api_errors_daily' => [[m
+[32m+[m[32m            'driver' => 'daily',[m
+[32m+[m[32m            'path' => storage_path('logs/api-errors.log'),[m
+[32m+[m[32m            'level' => env('LOG_API_ERRORS_LEVEL', 'debug'),[m
+[32m+[m[32m            'days' => env('LOG_API_ERRORS_DAYS', 14),[m
+[32m+[m[32m            'replace_placeholders' => true,[m
+[32m+[m[32m        ],[m
+[32m+[m
+         'slack' => [[m
+             'driver' => 'slack',[m
+             'url' => env('LOG_SLACK_WEBHOOK_URL'),[m
+[1mdiff --git a/routes/api.php b/routes/api.php[m
+[1mindex 0ba5ef4..95655a5 100644[m
+[1m--- a/routes/api.php[m
+[1m+++ b/routes/api.php[m
+[36m@@ -1,6 +1,9 @@[m
+ <?php[m
+ [m
+[32m+[m[32muse App\Http\Controllers\AdminOrderController;[m
+[32m+[m[32muse App\Http\Controllers\AdminAuthController;[m
+ use App\Http\Controllers\AuthController;[m
+[32m+[m[32muse App\Http\Controllers\OrderController;[m
+ use Illuminate\Support\Facades\Route;[m
+ [m
+ Route::post('/auth/register', [AuthController::class, 'register']);[m
+[36m@@ -8,8 +11,14 @@[m
+ [m
+ Route::middleware('auth:sanctum')->group(function () {[m
+     Route::post('/auth/logout', [AuthController::class, 'logout']);[m
+[32m+[m[32m    Route::get('/orders', [OrderController::class, 'index']);[m
+ });[m
+ [m
+[31m-// Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {[m
+[32m+[m[32mRoute::prefix('admin')->group(function () {[m
+[32m+[m[32m    Route::post('/auth/login', [AdminAuthController::class, 'login']);[m
+ [m
+[31m-// });[m
+\ No newline at end of file[m
+[32m+[m[32m    Route::middleware(['auth:sanctum', 'admin'])->group(function () {[m
+[32m+[m[32m        Route::post('/auth/logout', [AdminAuthController::class, 'logout']);[m
+[32m+[m[32m        Route::get('/orders', [AdminOrderController::class, 'index']);[m
+[32m+[m[32m    });[m
+[32m+[m[32m});[m
+\ No newline at end of file[m
