@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminOrderController;
 use App\Http\Controllers\AdminAuthController;
+use App\Http\Controllers\AdminProductController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
@@ -23,10 +24,13 @@ Route::prefix('admin')->group(function () {
 
     Route::middleware(['auth:sanctum', 'admin'])->group(function () {
         Route::post('/auth/logout', [AdminAuthController::class, 'logout']);
+        Route::get('/products', [AdminProductController::class, 'index']);
+        Route::get('/products/{id}', [AdminProductController::class, 'show']);
+        Route::post('/products', [AdminProductController::class, 'create']);
+        Route::put('/products/{id}', [AdminProductController::class, 'update']);
+        Route::delete('/products/{id}', [AdminProductController::class, 'destroy']);
         Route::get('/orders', [AdminOrderController::class, 'index']);
+        Route::get('/orders/{id}', [AdminOrderController::class, 'show']);
+        Route::put('/orders/update-status/{id}', [AdminOrderController::class, 'update']);
     });
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    Route::post('/products/', [ProductController::class, 'create']);
-    Route::put('/products/{id}', [ProductController::class, 'update']);
-    Route::delete('/products/{id}', [ProductController::class, 'destroy']);
 });
