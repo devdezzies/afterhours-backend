@@ -24,12 +24,16 @@ Route::prefix('admin')->group(function () {
 
     Route::middleware(['auth:sanctum', 'admin'])->group(function () {
         Route::post('/auth/logout', [AdminAuthController::class, 'logout']);
+        
         Route::get('/products', [AdminProductController::class, 'index']);
         Route::get('/products/{id}', [AdminProductController::class, 'show']);
         Route::post('/products', [AdminProductController::class, 'create']);
         Route::put('/products/{id}', [AdminProductController::class, 'update']);
         Route::delete('/products/{id}', [AdminProductController::class, 'destroy']);
+        Route::get('/stock-alerts', [AdminProductController::class, 'stockAlerts']);
+
         Route::get('/orders', [AdminOrderController::class, 'index']);
+        Route::get('/orders/stats', [AdminOrderController::class, 'stats']);
         Route::get('/orders/{id}', [AdminOrderController::class, 'show']);
         Route::put('/orders/update-status/{id}', [AdminOrderController::class, 'update']);
     });

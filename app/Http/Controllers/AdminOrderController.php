@@ -27,12 +27,18 @@ class AdminOrderController extends OrderController
                 ]);
                 $query->with('product:id,name,category,image_url');
             },
+            'user:id,name,email',
         ])->findOrFail($id);
 
         return response()->json([
             'data' => [
                 'id'               => $order->id,
                 'user_id'          => $order->user_id,
+                'user'             => $order->user ? [
+                    'id'    => $order->user->id,
+                    'name'  => $order->user->name,
+                    'email' => $order->user->email,
+                ] : null,
                 'status'           => $order->status,
                 'total_amount'     => (float) $order->total_amount,
                 'shipping_address' => $order->shipping_address,
@@ -80,6 +86,29 @@ class AdminOrderController extends OrderController
                 'status'     => $order->status,
                 'updated_at' => $order->updated_at?->toISOString(),
             ],
+        ]);
+    }
+
+    public function stats(): JsonResponse
+    {
+        $totalOrders = Order::count();
+        $statusCounts = Order::select('status', \Illuminate\Support\Facades\DB::raw('count(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status');
+
+        $chartData = [];
+        for ($i = -5; $i <= 1; $i++) {
+            $date = \Carbon\Carbon::today()->addDays($i);
+            $chartData[] = [
+                'day' => $date->toDateString(),
+                'orders' => $i === 1 ? null : Order::whereDate('created_at', $date)->count(),
+            ];
+        }
+
+        return response()->json([
+            'total_orders'  => $totalOrders,
+            'status_counts' => $statusCounts,
+            'chart_data'    => $chartData,
         ]);
     }
 }

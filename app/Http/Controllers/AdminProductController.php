@@ -31,4 +31,10 @@ class AdminProductController extends ProductController
     {
         return parent::destroy($id);
     }
+
+    public function stockAlerts(): JsonResponse
+    {
+        $products = \App\Models\Product::where('stock', '<=', 5)->get();
+        return response()->json($products);
+    }
 }

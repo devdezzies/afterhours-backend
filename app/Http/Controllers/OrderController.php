@@ -33,6 +33,7 @@ class OrderController extends Controller
     private const ALLOWED_INCLUDES = [
         'items',
         'items.product',
+        'user',
     ];
 
     public function index(Request $request): JsonResponse
@@ -82,6 +83,7 @@ class OrderController extends Controller
         $includes = $this->parseCsv($request->input('include'));
         $includeItems = in_array('items', $includes, true) || in_array('items.product', $includes, true);
         $includeProduct = in_array('items.product', $includes, true);
+        $includeUser = in_array('user', $includes, true);
 
         $query = Order::query()
             ->select(array_values(array_unique(array_merge(['id', 'user_id'], $orderFields))))
@@ -117,6 +119,10 @@ class OrderController extends Controller
             ]);
         }
 
+        if ($includeUser) {
+            $query->with('user:id,name,email');
+        }
+
         $perPage = (int) $request->get('per_page', $request->get('limit', 10));
         $perPage = min($perPage, 100);
 
@@ -127,7 +133,8 @@ class OrderController extends Controller
                 $paginate->items(),
                 $orderFields,
                 $includeItems,
-                $includeProduct
+                $includeProduct,
+                $includeUser
             ),
             'current_page' => $paginate->currentPage(),
             'last_page' => $paginate->lastPage(),
@@ -140,15 +147,16 @@ class OrderController extends Controller
         array $orders,
         array $fields,
         bool $includeItems,
-        bool $includeProduct
+        bool $includeProduct,
+        bool $includeUser = false
     ): array {
         return array_map(
-            fn (Order $order) => $this->formatOrder($order, $fields, $includeItems, $includeProduct),
+            fn (Order $order) => $this->formatOrder($order, $fields, $includeItems, $includeProduct, $includeUser),
             $orders
         );
     }
 
-    private function formatOrder(Order $order, array $fields, bool $includeItems, bool $includeProduct): array
+    private function formatOrder(Order $order, array $fields, bool $includeItems, bool $includeProduct, bool $includeUser = false): array
     {
         $fieldMap = [
             'id' => $order->id,
@@ -172,6 +180,14 @@ class OrderController extends Controller
                 ->map(fn (OrderItem $item) => $this->formatOrderItem($item, $includeProduct))
                 ->values()
                 ->all();
+        }
+
+        if ($includeUser) {
+            $payload['user'] = $order->user ? [
+                'id' => $order->user->id,
+                'name' => $order->user->name,
+                'email' => $order->user->email,
+            ] : null;
         }
 
         return $payload;
