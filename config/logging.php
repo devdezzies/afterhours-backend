@@ -73,6 +73,20 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'api_errors' => [
+            'driver' => 'stack',
+            'channels' => explode(',', (string) env('LOG_API_ERRORS_STACK', 'api_errors_daily')),
+            'ignore_exceptions' => false,
+        ],
+
+        'api_errors_daily' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/api-errors.log'),
+            'level' => env('LOG_API_ERRORS_LEVEL', 'debug'),
+            'days' => env('LOG_API_ERRORS_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

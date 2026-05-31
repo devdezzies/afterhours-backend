@@ -71,7 +71,7 @@ class ProductController extends Controller
         ]);
     }
     
-    private function formatProduct(Product $product): array
+    protected function formatProduct(Product $product): array
     {
         return [
             'id'          => $product->id,
@@ -84,7 +84,7 @@ class ProductController extends Controller
         ];
     }
 
-    private function formatCollection(array $products): array
+    protected function formatCollection(array $products): array
     {
         return array_map(
             fn(Product $p) => $this->formatProduct($p),
