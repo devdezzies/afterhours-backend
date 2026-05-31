@@ -21,4 +21,3 @@ Made by:
 3. Muhammad Febrian Hafiz (@swagenougk)
 4. Muhammad Ardiansyah Pratama (@davindthomassingson)
 5. Abiyoso Danar Panji Yudhanto (@mr_fahrenheit)
-
