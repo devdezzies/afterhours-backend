@@ -23,12 +23,10 @@ class ProductController extends Controller
 
         $query = Product::query();
 
-        // ── Filter: category ──────────────────────────────────────────────────
         if ($request->filled('category')) {
             $query->where('category', $request->category);
         }
 
-        // ── Filter: max_price ─────────────────────────────────────────────────
         if ($request->filled('max_price')) {
             $query->where('price', '<=', (float) $request->max_price);
         }
@@ -50,7 +48,7 @@ class ProductController extends Controller
 
         $query->orderBy('created_at', 'desc');
 
-        $perPage  = min((int) $request->get('per_page', 20), 50);
+        $perPage  = min((int) $request->input('per_page', 20), 50);
         $paginate = $query->paginate($perPage);
 
         return response()->json([
@@ -63,7 +61,6 @@ class ProductController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        // findOrFail triggers ModelNotFoundException → caught globally → 404 JSON
         $product = Product::findOrFail($id);
 
         return response()->json([
@@ -77,9 +74,9 @@ class ProductController extends Controller
             'id'          => $product->id,
             'name'        => $product->name,
             'description' => $product->description,
-            'price'       => (float) $product->price,   // Flutter reads as num → toDouble()
-            'stock'       => (int)   $product->stock,   // Flutter reads as int
-            'category'    => $product->category,        // ENUM string: "peripherals" etc.
+            'price'       => (float) $product->price,   
+            'stock'       => (int)   $product->stock,   
+            'category'    => $product->category,        
             'image_url'   => $product->image_url,
         ];
     }
