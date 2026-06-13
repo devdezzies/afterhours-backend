@@ -68,7 +68,7 @@ class ProductController extends Controller
         ]);
     }
     
-    private function formatProduct(Product $product): array
+    protected function formatProduct(Product $product): array
     {
         return [
             'id'          => $product->id,
@@ -81,11 +81,69 @@ class ProductController extends Controller
         ];
     }
 
-    private function formatCollection(array $products): array
+    protected function formatCollection(array $products): array
     {
         return array_map(
             fn(Product $p) => $this->formatProduct($p),
             $products
         );
+    }
+
+    public function create(Request $request): JsonResponse
+    {
+        $request->validate([
+            'name'        => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string'],
+            'price'       => ['required', 'numeric', 'min:0'],
+            'stock'       => ['required', 'integer', 'min:0'],
+            'category'    => ['required', Rule::in([
+                'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
+            ])],
+            'image_url'   => ['nullable', 'url'],
+        ]);
+
+        $product = Product::create($request->only([
+            'name', 'description', 'price', 'stock', 'category', 'image_url'
+        ]));
+
+        return response()->json([
+            'message' => 'Product created successfully',
+            'data'    => $this->formatProduct($product),
+        ], 201);
+    }
+
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $product = Product::findOrFail($id);
+
+        $request->validate([
+            'name'        => ['sometimes', 'string', 'max:255'],
+            'description' => ['sometimes', 'string'],
+            'price'       => ['sometimes', 'numeric', 'min:0'],
+            'stock'       => ['sometimes', 'integer', 'min:0'],
+            'category'    => ['sometimes', Rule::in([
+                'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
+            ])],
+            'image_url'   => ['nullable', 'url'],
+        ]);
+
+        $product->update($request->only([
+            'name', 'description', 'price', 'stock', 'category', 'image_url'
+        ]));
+
+        return response()->json([
+            'message' => 'Product updated successfully',
+            'data'    => $this->formatProduct($product),
+        ]);
+    }
+
+    public function destroy(string $id): JsonResponse
+    {
+        $product = Product::findOrFail($id);
+        $product->delete();
+
+        return response()->json([
+            'message' => 'Product deleted successfully',
+        ]);
     }
 }
