@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -14,6 +17,10 @@ class OrderController extends Controller
         'status',
         'total_amount',
         'shipping_address',
+        'shipping_city',
+        'shipping_country_region',
+        'shipping_postcode',
+        'shipping_phone_number',
         'shipping_lat',
         'shipping_lng',
         'created_at',
@@ -25,6 +32,10 @@ class OrderController extends Controller
         'status',
         'total_amount',
         'shipping_address',
+        'shipping_city',
+        'shipping_country_region',
+        'shipping_postcode',
+        'shipping_phone_number',
         'shipping_lat',
         'shipping_lng',
         'created_at',
@@ -35,6 +46,111 @@ class OrderController extends Controller
         'items.product',
         'user',
     ];
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1', 'max:100'],
+            'items.*.product_id' => ['required', 'uuid', 'distinct'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
+            'shipping_address' => ['required', 'array'],
+            'shipping_address.address' => ['required', 'string', 'max:500'],
+            'shipping_address.city' => ['required', 'string', 'max:100'],
+            'shipping_address.country_region' => ['required', 'string', 'max:100'],
+            'shipping_address.postcode' => ['required', 'string', 'max:20'],
+            'shipping_address.phone_number' => ['required', 'string', 'max:30'],
+            'shipping_address.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'shipping_address.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+        ]);
+
+        $idempotencyKey = trim((string) $request->header('Idempotency-Key'));
+        if ($idempotencyKey === '' || strlen($idempotencyKey) > 100) {
+            throw ValidationException::withMessages([
+                'idempotency_key' => ['A valid Idempotency-Key header is required.'],
+            ]);
+        }
+
+        $user = $request->user();
+        $existing = Order::where('user_id', $user->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'data' => $this->formatOrderDetail($existing->load('orderItems.product')),
+                'idempotent_replay' => true,
+            ]);
+        }
+
+        $order = DB::transaction(function () use ($validated, $user, $idempotencyKey) {
+            $requested = collect($validated['items'])->keyBy('product_id');
+            $products = Product::whereIn('id', $requested->keys())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $errors = [];
+            foreach ($requested as $productId => $item) {
+                $product = $products->get($productId);
+                if (!$product) {
+                    $errors["items.{$productId}"][] = 'Product is no longer available.';
+                } elseif ((int) $product->stock < (int) $item['quantity']) {
+                    $errors["items.{$productId}"][] = "Only {$product->stock} item(s) remain in stock.";
+                }
+            }
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
+
+            $total = $requested
+                ->map(function ($item, $productId) use ($products) {
+                    return (int) round((float) $products[$productId]->price)
+                        * (int) $item['quantity'];
+                })
+                ->sum();
+            $address = $validated['shipping_address'];
+
+            $order = Order::create([
+                'user_id' => $user->id,
+                'total_amount' => $total,
+                'status' => 'pending',
+                'shipping_address' => $address['address'],
+                'shipping_city' => $address['city'],
+                'shipping_country_region' => $address['country_region'],
+                'shipping_postcode' => $address['postcode'],
+                'shipping_phone_number' => $address['phone_number'],
+                'shipping_lat' => $address['latitude'] ?? null,
+                'shipping_lng' => $address['longitude'] ?? null,
+                'idempotency_key' => $idempotencyKey,
+            ]);
+
+            foreach ($requested as $productId => $item) {
+                $product = $products[$productId];
+                OrderItem::create([
+                    'order_id' => $order->id,
+                    'product_id' => $product->id,
+                    'quantity' => (int) $item['quantity'],
+                    'price_at_purchase' => (int) round((float) $product->price),
+                ]);
+                $product->decrement('stock', (int) $item['quantity']);
+            }
+
+            return $order->load('orderItems.product');
+        }, 3);
+
+        return response()->json([
+            'data' => $this->formatOrderDetail($order),
+            'idempotent_replay' => false,
+        ], 201);
+    }
+
+    public function show(Request $request, string $id): JsonResponse
+    {
+        $order = Order::with('orderItems.product')
+            ->where('user_id', $request->user()->id)
+            ->findOrFail($id);
+
+        return response()->json(['data' => $this->formatOrderDetail($order)]);
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -161,8 +277,12 @@ class OrderController extends Controller
         $fieldMap = [
             'id' => $order->id,
             'status' => $order->status,
-            'total_amount' => (float) $order->total_amount,
+            'total_amount' => (int) round((float) $order->total_amount),
             'shipping_address' => $order->shipping_address,
+            'shipping_city' => $order->shipping_city,
+            'shipping_country_region' => $order->shipping_country_region,
+            'shipping_postcode' => $order->shipping_postcode,
+            'shipping_phone_number' => $order->shipping_phone_number,
             'shipping_lat' => $order->shipping_lat !== null ? (float) $order->shipping_lat : null,
             'shipping_lng' => $order->shipping_lng !== null ? (float) $order->shipping_lng : null,
             'created_at' => $order->created_at?->toISOString(),
@@ -193,14 +313,38 @@ class OrderController extends Controller
         return $payload;
     }
 
+    private function formatOrderDetail(Order $order): array
+    {
+        return [
+            'id' => $order->id,
+            'status' => $order->status,
+            'total_amount' => (int) round((float) $order->total_amount),
+            'shipping_address' => [
+                'address' => $order->shipping_address,
+                'city' => $order->shipping_city,
+                'country_region' => $order->shipping_country_region,
+                'postcode' => $order->shipping_postcode,
+                'phone_number' => $order->shipping_phone_number,
+                'latitude' => $order->shipping_lat !== null ? (float) $order->shipping_lat : null,
+                'longitude' => $order->shipping_lng !== null ? (float) $order->shipping_lng : null,
+            ],
+            'created_at' => $order->created_at?->toISOString(),
+            'updated_at' => $order->updated_at?->toISOString(),
+            'items' => $order->orderItems
+                ->map(fn (OrderItem $item) => $this->formatOrderItem($item, true))
+                ->values()
+                ->all(),
+        ];
+    }
+
     private function formatOrderItem(OrderItem $item, bool $includeProduct): array
     {
         $payload = [
             'id' => $item->id,
             'product_id' => $item->product_id,
             'quantity' => (int) $item->quantity,
-            'price_at_purchase' => (float) $item->price_at_purchase,
-            'subtotal' => (float) $item->price_at_purchase * (int) $item->quantity,
+            'price_at_purchase' => (int) round((float) $item->price_at_purchase),
+            'subtotal' => (int) round((float) $item->price_at_purchase) * (int) $item->quantity,
         ];
 
         if ($includeProduct) {

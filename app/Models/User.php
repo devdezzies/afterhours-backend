@@ -19,6 +19,13 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'phone_number',
+        'default_address',
+        'address_city',
+        'address_country_region',
+        'address_postcode',
+        'address_lat',
+        'address_lng',
     ];
 
     protected $hidden = [
@@ -30,6 +37,8 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed', 
+            'address_lat' => 'decimal:7',
+            'address_lng' => 'decimal:7',
         ];
     }
 

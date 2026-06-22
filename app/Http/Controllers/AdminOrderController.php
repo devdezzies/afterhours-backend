@@ -40,7 +40,7 @@ class AdminOrderController extends OrderController
                     'email' => $order->user->email,
                 ] : null,
                 'status'           => $order->status,
-                'total_amount'     => (float) $order->total_amount,
+                'total_amount'     => (int) round((float) $order->total_amount),
                 'shipping_address' => $order->shipping_address,
                 'shipping_lat'     => $order->shipping_lat !== null ? (float) $order->shipping_lat : null,
                 'shipping_lng'     => $order->shipping_lng !== null ? (float) $order->shipping_lng : null,
@@ -51,8 +51,8 @@ class AdminOrderController extends OrderController
                         'id'                => $item->id,
                         'product_id'        => $item->product_id,
                         'quantity'          => (int) $item->quantity,
-                        'price_at_purchase' => (float) $item->price_at_purchase,
-                        'subtotal'          => (float) $item->price_at_purchase * (int) $item->quantity,
+                        'price_at_purchase' => (int) round((float) $item->price_at_purchase),
+                        'subtotal'          => (int) round((float) $item->price_at_purchase) * (int) $item->quantity,
                         'product'           => $item->product ? [
                             'id'        => $item->product->id,
                             'name'      => $item->product->name,
@@ -97,11 +97,11 @@ class AdminOrderController extends OrderController
             ->pluck('count', 'status');
 
         $chartData = [];
-        for ($i = -5; $i <= 1; $i++) {
+        for ($i = -6; $i <= 0; $i++) {
             $date = \Carbon\Carbon::today()->addDays($i);
             $chartData[] = [
                 'day' => $date->toDateString(),
-                'orders' => $i === 1 ? null : Order::whereDate('created_at', $date)->count(),
+                'orders' => Order::whereDate('created_at', $date)->count(),
             ];
         }
 

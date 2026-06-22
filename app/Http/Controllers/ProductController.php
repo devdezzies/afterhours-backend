@@ -39,8 +39,9 @@ class ProductController extends Controller
             if (!empty($keywords)) {
                 $query->where(function ($q) use ($keywords) {
                     foreach ($keywords as $keyword) {
-                        $q->orWhere('name', 'ilike', "%{$keyword}%")
-                          ->orWhere('description', 'ilike', "%{$keyword}%");
+                        $needle = '%'.mb_strtolower($keyword).'%';
+                        $q->orWhereRaw('LOWER(name) LIKE ?', [$needle])
+                          ->orWhereRaw('LOWER(description) LIKE ?', [$needle]);
                     }
                 });
             }
@@ -74,7 +75,7 @@ class ProductController extends Controller
             'id'          => $product->id,
             'name'        => $product->name,
             'description' => $product->description,
-            'price'       => (float) $product->price,   
+            'price'       => (int) round((float) $product->price),
             'stock'       => (int)   $product->stock,   
             'category'    => $product->category,        
             'image_url'   => $product->image_url,
@@ -94,12 +95,12 @@ class ProductController extends Controller
         $request->validate([
             'name'        => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
-            'price'       => ['required', 'numeric', 'min:0'],
+            'price'       => ['required', 'integer', 'min:0'],
             'stock'       => ['required', 'integer', 'min:0'],
             'category'    => ['required', Rule::in([
                 'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
             ])],
-            'image_url'   => ['nullable', 'url'],
+            'image_url'   => ['required', 'url'],
         ]);
 
         $product = Product::create($request->only([
@@ -119,7 +120,7 @@ class ProductController extends Controller
         $request->validate([
             'name'        => ['sometimes', 'string', 'max:255'],
             'description' => ['sometimes', 'string'],
-            'price'       => ['sometimes', 'numeric', 'min:0'],
+            'price'       => ['sometimes', 'integer', 'min:0'],
             'stock'       => ['sometimes', 'integer', 'min:0'],
             'category'    => ['sometimes', Rule::in([
                 'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
