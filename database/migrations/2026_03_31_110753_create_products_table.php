@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('products', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(new \Illuminate\Database\Query\Expression('gen_random_uuid()'));
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->text('description');
             $table->decimal('price', 15, 2);

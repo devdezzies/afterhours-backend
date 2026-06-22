@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('orders', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(new \Illuminate\Database\Query\Expression('gen_random_uuid()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('user_id')->constrained()->cascadeOnDelete();
             $table->decimal('total_amount', 15, 2);
             $table->enum('status', ['pending', 'shipped', 'delivered'])->default('pending');
@@ -20,7 +20,7 @@ return new class extends Migration
         });
 
         Schema::create('order_items', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(new \Illuminate\Database\Query\Expression('gen_random_uuid()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('order_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('product_id')->constrained()->restrictOnDelete();
             $table->unsignedInteger('quantity');

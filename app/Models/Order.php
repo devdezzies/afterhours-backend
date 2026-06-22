@@ -18,8 +18,13 @@ class Order extends Model
         'total_amount',
         'status',
         'shipping_address',
+        'shipping_city',
+        'shipping_country_region',
+        'shipping_postcode',
+        'shipping_phone_number',
         'shipping_lat',
         'shipping_lng',
+        'idempotency_key',
     ];
 
     protected function casts(): array
