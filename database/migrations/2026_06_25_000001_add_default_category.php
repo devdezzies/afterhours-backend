@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    public $withinTransaction = false;
+
     public function up(): void
     {
         if (! Schema::hasTable('categories')) {
@@ -15,7 +17,7 @@ return new class extends Migration
 
         if (! Schema::hasColumn('categories', 'is_default')) {
             Schema::table('categories', function (Blueprint $table) {
-                $table->boolean('is_default')->default(false)->after('name')->index();
+                $table->boolean('is_default')->default(false)->index();
             });
         }
 
