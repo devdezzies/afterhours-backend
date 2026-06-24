@@ -56,6 +56,8 @@ class ProductController extends Controller
             'data'         => $this->formatCollection($paginate->items()),
             'current_page' => $paginate->currentPage(),
             'last_page'    => $paginate->lastPage(),
+            'per_page'     => $paginate->perPage(),
+            'total'        => $paginate->total(),
         ]);
     }
 
@@ -141,6 +143,13 @@ class ProductController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $product = Product::findOrFail($id);
+
+        if ($product->orderItems()->exists()) {
+            return response()->json([
+                'message' => 'Product cannot be deleted because it is referenced by an existing order.',
+            ], 409);
+        }
+
         $product->delete();
 
         return response()->json([
