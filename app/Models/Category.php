@@ -9,11 +9,20 @@ class Category extends Model
 {
     use HasFactory;
 
+    public const DEFAULT_NAME = 'default';
+
     public $timestamps = false;
 
     protected $fillable = [
         'name',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_default' => 'boolean',
+        ];
+    }
 
     public function products()
     {

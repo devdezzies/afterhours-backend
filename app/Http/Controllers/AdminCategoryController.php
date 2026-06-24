@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class AdminCategoryController extends Controller
@@ -13,7 +14,7 @@ class AdminCategoryController extends Controller
     public function index(): JsonResponse
     {
         return response()->json([
-            'data' => Category::orderBy('name')->get(['id', 'name']),
+            'data' => Category::orderBy('name')->get(['id', 'name', 'is_default']),
         ]);
     }
 
@@ -35,6 +36,12 @@ class AdminCategoryController extends Controller
     {
         $category = Category::findOrFail($id);
 
+        if ($category->is_default) {
+            return response()->json([
+                'message' => 'Default category cannot be renamed.',
+            ], 409);
+        }
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -55,12 +62,37 @@ class AdminCategoryController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $category = Category::findOrFail($id);
+        $defaultCategory = $this->defaultCategory();
 
-        Product::where('category_id', $category->id)->update(['category_id' => null]);
-        $category->delete();
+        if ($category->is_default || $category->id === $defaultCategory->id) {
+            return response()->json([
+                'message' => 'Default category cannot be deleted.',
+            ], 409);
+        }
+
+        DB::transaction(function () use ($category, $defaultCategory) {
+            Product::where('category_id', $category->id)->update([
+                'category_id' => $defaultCategory->id,
+            ]);
+
+            $category->delete();
+        });
 
         return response()->json([
             'message' => 'Category deleted successfully',
         ]);
+    }
+
+    private function defaultCategory(): Category
+    {
+        $category = Category::firstOrCreate([
+            'name' => Category::DEFAULT_NAME,
+        ]);
+
+        if (! $category->is_default) {
+            $category->forceFill(['is_default' => true])->save();
+        }
+
+        return $category;
     }
 }
