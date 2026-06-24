@@ -229,7 +229,10 @@ class OrderController extends Controller
                     ]);
 
                     if ($includeProduct) {
-                        $itemQuery->with('product:id,name,category,image_url');
+                        $itemQuery->with([
+                            'product:id,name,category_id,image_url',
+                            'product.category:id,name',
+                        ]);
                     }
                 },
             ]);
@@ -351,7 +354,7 @@ class OrderController extends Controller
             $payload['product'] = $item->product ? [
                 'id' => $item->product->id,
                 'name' => $item->product->name,
-                'category' => $item->product->category,
+                'category' => $item->product->category?->name,
                 'image_url' => $item->product->image_url,
             ] : null;
         }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,12 +16,13 @@ class MobileIntegrationTest extends TestCase
     {
         $user = User::factory()->create();
         $token = $user->createToken('mobile')->plainTextToken;
+        $category = Category::where('name', 'peripherals')->firstOrFail();
         $product = Product::create([
             'name' => 'Keyboard',
             'description' => 'Mechanical keyboard',
             'price' => 1500000,
             'stock' => 3,
-            'category' => 'peripherals',
+            'category_id' => $category->id,
             'image_url' => 'https://example.com/keyboard.jpg',
         ]);
 
@@ -90,12 +92,13 @@ class MobileIntegrationTest extends TestCase
     {
         $user = User::factory()->create();
         $token = $user->createToken('mobile')->plainTextToken;
+        $category = Category::where('name', 'peripherals')->firstOrFail();
         $product = Product::create([
             'name' => 'Mouse',
             'description' => 'Wireless mouse',
             'price' => 500000,
             'stock' => 1,
-            'category' => 'peripherals',
+            'category_id' => $category->id,
             'image_url' => 'https://example.com/mouse.jpg',
         ]);
 

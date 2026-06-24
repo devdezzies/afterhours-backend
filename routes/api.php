@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminOrderController;
 use App\Http\Controllers\AdminAuthController;
+use App\Http\Controllers\AdminCategoryController;
 use App\Http\Controllers\AdminProductController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
@@ -42,5 +43,10 @@ Route::prefix('admin')->group(function () {
         Route::get('/orders/stats', [AdminOrderController::class, 'stats']);
         Route::get('/orders/{id}', [AdminOrderController::class, 'show']);
         Route::put('/orders/update-status/{id}', [AdminOrderController::class, 'update']);
+
+        Route::get('/categories', [AdminCategoryController::class, 'index']);
+        Route::post('/categories', [AdminCategoryController::class, 'create']);
+        Route::put('/categories/{id}', [AdminCategoryController::class, 'update']);
+        Route::delete('/categories/{id}', [AdminCategoryController::class, 'destroy']);
     });
 });

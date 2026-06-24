@@ -60,7 +60,17 @@ class ProductSeeder extends Seeder
             return;
         }
 
-        $rows = array_map(function (array $product) {
+        $categoryNames = array_values(array_unique(array_column($products, 'category')));
+        foreach ($categoryNames as $categoryName) {
+            DB::table('categories')->updateOrInsert(
+                ['name' => $categoryName],
+                ['name' => $categoryName]
+            );
+        }
+
+        $categories = DB::table('categories')->pluck('id', 'name');
+
+        $rows = array_map(function (array $product) use ($categories) {
             return [
                 'id'=> $product['id'],
                 'name' => $product['name'],
@@ -68,7 +78,8 @@ class ProductSeeder extends Seeder
                 'price' => self::IDR_PRICES[(string) $product['price']]
                     ?? throw new \RuntimeException("Missing curated IDR price for {$product['name']}"),
                 'stock' => $product['stock'],
-                'category' => $product['category'],
+                'category_id' => $categories[$product['category']]
+                    ?? throw new \RuntimeException("Missing category for {$product['name']}"),
                 'image_url' => $product['image_url'],
                 'created_at' => $product['created_at'],
                 'updated_at' => $product['updated_at'],
@@ -78,7 +89,7 @@ class ProductSeeder extends Seeder
         DB::table('products')->upsert(
             $rows,
             ['id'],                                                  
-            ['name', 'description', 'price', 'stock', 'category',  
+            ['name', 'description', 'price', 'stock', 'category_id',
              'image_url', 'updated_at']
         );
 
