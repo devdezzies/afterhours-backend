@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
@@ -14,17 +14,22 @@ class ProductController extends Controller
         $request->validate([
             'page'      => ['sometimes', 'integer', 'min:1'],
             'per_page'  => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'category'  => ['sometimes', Rule::in([
-                'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
-            ])],
+            'category'  => ['sometimes', 'string', 'max:100', 'exists:categories,name'],
+            'category_id' => ['sometimes', 'integer', 'exists:categories,id'],
             'max_price' => ['sometimes', 'numeric', 'min:0'],
             'keywords'  => ['sometimes', 'string', 'max:500'],
         ]);
 
-        $query = Product::query();
+        $query = Product::with('category');
 
         if ($request->filled('category')) {
-            $query->where('category', $request->category);
+            $query->whereHas('category', function ($categoryQuery) use ($request) {
+                $categoryQuery->where('name', $request->category);
+            });
+        }
+
+        if ($request->filled('category_id')) {
+            $query->where('category_id', (int) $request->category_id);
         }
 
         if ($request->filled('max_price')) {
@@ -56,13 +61,15 @@ class ProductController extends Controller
             'data'         => $this->formatCollection($paginate->items()),
             'current_page' => $paginate->currentPage(),
             'last_page'    => $paginate->lastPage(),
+            'per_page'     => $paginate->perPage(),
+            'total'        => $paginate->total(),
         ]);
     }
 
 
     public function show(string $id): JsonResponse
     {
-        $product = Product::findOrFail($id);
+        $product = Product::with('category')->findOrFail($id);
 
         return response()->json([
             'data' => $this->formatProduct($product),
@@ -77,7 +84,8 @@ class ProductController extends Controller
             'description' => $product->description,
             'price'       => (int) round((float) $product->price),
             'stock'       => (int)   $product->stock,   
-            'category'    => $product->category,        
+            'category_id'  => $product->category_id,
+            'category'    => $product->category?->name,
             'image_url'   => $product->image_url,
         ];
     }
@@ -97,15 +105,17 @@ class ProductController extends Controller
             'description' => ['required', 'string'],
             'price'       => ['required', 'integer', 'min:0'],
             'stock'       => ['required', 'integer', 'min:0'],
-            'category'    => ['required', Rule::in([
-                'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
-            ])],
+            'category_id'  => ['required_without:category', 'nullable', 'integer', 'exists:categories,id'],
+            'category'     => ['required_without:category_id', 'nullable', 'string', 'max:100', 'exists:categories,name'],
             'image_url'   => ['required', 'url'],
         ]);
 
-        $product = Product::create($request->only([
-            'name', 'description', 'price', 'stock', 'category', 'image_url'
-        ]));
+        $data = $request->only([
+            'name', 'description', 'price', 'stock', 'image_url'
+        ]);
+        $data['category_id'] = $this->resolveCategoryId($request);
+
+        $product = Product::create($data)->load('category');
 
         return response()->json([
             'message' => 'Product created successfully',
@@ -122,15 +132,21 @@ class ProductController extends Controller
             'description' => ['sometimes', 'string'],
             'price'       => ['sometimes', 'integer', 'min:0'],
             'stock'       => ['sometimes', 'integer', 'min:0'],
-            'category'    => ['sometimes', Rule::in([
-                'peripherals', 'furniture', 'desk_accessories', 'audio', 'eyewear'
-            ])],
+            'category_id'  => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
+            'category'     => ['sometimes', 'nullable', 'string', 'max:100', 'exists:categories,name'],
             'image_url'   => ['nullable', 'url'],
         ]);
 
-        $product->update($request->only([
-            'name', 'description', 'price', 'stock', 'category', 'image_url'
-        ]));
+        $data = $request->only([
+            'name', 'description', 'price', 'stock', 'image_url'
+        ]);
+
+        if ($request->has('category_id') || $request->has('category')) {
+            $data['category_id'] = $this->resolveCategoryId($request);
+        }
+
+        $product->update($data);
+        $product->load('category');
 
         return response()->json([
             'message' => 'Product updated successfully',
@@ -141,10 +157,30 @@ class ProductController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $product = Product::findOrFail($id);
+
+        if ($product->orderItems()->exists()) {
+            return response()->json([
+                'message' => 'Product cannot be deleted because it is referenced by an existing order.',
+            ], 409);
+        }
+
         $product->delete();
 
         return response()->json([
             'message' => 'Product deleted successfully',
         ]);
+    }
+
+    protected function resolveCategoryId(Request $request): ?int
+    {
+        if ($request->has('category_id') && $request->input('category_id') !== null) {
+            return (int) $request->input('category_id');
+        }
+
+        if ($request->filled('category')) {
+            return Category::where('name', $request->category)->value('id');
+        }
+
+        return null;
     }
 }

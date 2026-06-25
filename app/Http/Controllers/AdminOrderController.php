@@ -25,7 +25,10 @@ class AdminOrderController extends OrderController
                     'quantity',
                     'price_at_purchase',
                 ]);
-                $query->with('product:id,name,category,image_url');
+                $query->with([
+                    'product:id,name,category_id,image_url',
+                    'product.category:id,name',
+                ]);
             },
             'user:id,name,email',
         ])->findOrFail($id);
@@ -56,7 +59,7 @@ class AdminOrderController extends OrderController
                         'product'           => $item->product ? [
                             'id'        => $item->product->id,
                             'name'      => $item->product->name,
-                            'category'  => $item->product->category,
+                            'category'  => $item->product->category?->name,
                             'image_url' => $item->product->image_url,
                         ] : null,
                     ];

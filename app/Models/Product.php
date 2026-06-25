@@ -18,7 +18,7 @@ class Product extends Model
         'description',
         'price',
         'stock',
-        'category',
+        'category_id',
         'image_url',
     ];
 
@@ -30,9 +30,13 @@ class Product extends Model
         ];
     }
 
-    // Relationship — used by OrderItem
     public function orderItems()
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
     }
 }
