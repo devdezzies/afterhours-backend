@@ -10,6 +10,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -83,118 +84,99 @@ class OrderController extends Controller
             ]);
         }
 
+        $checkoutStep = 'before_transaction';
+
         try {
-            $result = $this->createOrder($validated, $user, $idempotencyKey);
-        } catch (UniqueConstraintViolationException) {
-            $order = $this->findIdempotentOrder($user->id, $idempotencyKey);
+            $order = DB::transaction(function () use ($validated, $user, $idempotencyKey, &$checkoutStep) {
+                $checkoutStep = 'collect_items';
+                $requested = collect($validated['items'])->keyBy('product_id');
 
-            if ($order) {
-                return response()->json([
-                    'data' => $this->formatOrderDetail($order),
-                    'idempotent_replay' => true,
-                ]);
-            }
+                $checkoutStep = 'lock_products';
+                $products = Product::whereIn('id', $requested->keys())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
 
-            throw ValidationException::withMessages([
-                'idempotency_key' => ['This idempotency key has already been used.'],
-            ]);
-        }
-
-        return response()->json([
-            'data' => $this->formatOrderDetail($result['order']),
-            'idempotent_replay' => $result['idempotent_replay'],
-        ], $result['idempotent_replay'] ? 200 : 201);
-    }
-
-    private function createOrder(array $validated, $user, string $idempotencyKey): array
-    {
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            try {
-                return $this->createOrderInTransaction($validated, $user, $idempotencyKey);
-            } catch (QueryException $e) {
-                if ($attempt === 0 && $this->isAbortedPostgresTransaction($e)) {
-                    DB::disconnect();
-
-                    continue;
+                $checkoutStep = 'validate_stock';
+                $errors = [];
+                foreach ($requested as $productId => $item) {
+                    $product = $products->get($productId);
+                    if (!$product) {
+                        $errors["items.{$productId}"][] = 'Product is no longer available.';
+                    } elseif ((int) $product->stock < (int) $item['quantity']) {
+                        $errors["items.{$productId}"][] = "Only {$product->stock} item(s) remain in stock.";
+                    }
+                }
+                if ($errors !== []) {
+                    throw ValidationException::withMessages($errors);
                 }
 
-                throw $e;
-            }
-        }
+                $checkoutStep = 'calculate_total';
+                $total = $requested
+                    ->map(function ($item, $productId) use ($products) {
+                        return (int) round((float) $products[$productId]->price)
+                            * (int) $item['quantity'];
+                    })
+                    ->sum();
+                $address = $validated['shipping_address'];
 
-        throw new \RuntimeException('Unable to create order after retry.');
-    }
-
-    private function createOrderInTransaction(array $validated, $user, string $idempotencyKey): array
-    {
-        return DB::transaction(function () use ($validated, $user, $idempotencyKey) {
-            $existing = $this->findIdempotentOrder($user->id, $idempotencyKey);
-
-            if ($existing) {
-                return [
-                    'order' => $existing,
-                    'idempotent_replay' => true,
-                ];
-            }
-
-            $requested = collect($validated['items'])->keyBy('product_id');
-            $products = Product::whereIn('id', $requested->keys())
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-
-            $errors = [];
-            foreach ($requested as $productId => $item) {
-                $product = $products->get($productId);
-                if (!$product) {
-                    $errors["items.{$productId}"][] = 'Product is no longer available.';
-                } elseif ((int) $product->stock < (int) $item['quantity']) {
-                    $errors["items.{$productId}"][] = "Only {$product->stock} item(s) remain in stock.";
-                }
-            }
-            if ($errors !== []) {
-                throw ValidationException::withMessages($errors);
-            }
-
-            $total = $requested
-                ->map(function ($item, $productId) use ($products) {
-                    return (int) round((float) $products[$productId]->price)
-                        * (int) $item['quantity'];
-                })
-                ->sum();
-            $address = $validated['shipping_address'];
-
-            $order = Order::create([
-                'user_id' => $user->id,
-                'total_amount' => $total,
-                'status' => 'pending',
-                'shipping_address' => $address['address'],
-                'shipping_city' => $address['city'],
-                'shipping_country_region' => $address['country_region'],
-                'shipping_postcode' => $address['postcode'],
-                'shipping_phone_number' => $address['phone_number'],
-                'shipping_lat' => $address['latitude'] ?? null,
-                'shipping_lng' => $address['longitude'] ?? null,
-                'idempotency_key' => $idempotencyKey,
-            ]);
-
-            foreach ($requested as $productId => $item) {
-                $product = $products[$productId];
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'product_id' => $product->id,
-                    'quantity' => (int) $item['quantity'],
-                    'price_at_purchase' => (int) round((float) $product->price),
+                $checkoutStep = 'create_order';
+                $order = Order::create([
+                    'user_id' => $user->id,
+                    'total_amount' => $total,
+                    'status' => 'pending',
+                    'shipping_address' => $address['address'],
+                    'shipping_city' => $address['city'],
+                    'shipping_country_region' => $address['country_region'],
+                    'shipping_postcode' => $address['postcode'],
+                    'shipping_phone_number' => $address['phone_number'],
+                    'shipping_lat' => $address['latitude'] ?? null,
+                    'shipping_lng' => $address['longitude'] ?? null,
+                    'idempotency_key' => $idempotencyKey,
                 ]);
-                $product->decrement('stock', (int) $item['quantity']);
-            }
 
-            return [
-                'order' => $order->load('orderItems.product'),
-                'idempotent_replay' => false,
-            ];
-        });
-    }
+                foreach ($requested as $productId => $item) {
+                    $product = $products[$productId];
+                    $quantity = (int) $item['quantity'];
+
+                    $checkoutStep = "create_order_item:{$productId}";
+                    OrderItem::create([
+                        'order_id' => $order->id,
+                        'product_id' => $product->id,
+                        'quantity' => $quantity,
+                        'price_at_purchase' => (int) round((float) $product->price),
+                    ]);
+
+                    $checkoutStep = "decrement_stock:{$productId}";
+                    $updated = Product::whereKey($product->id)
+                        ->where('stock', '>=', $quantity)
+                        ->decrement('stock', $quantity);
+
+                    if ($updated !== 1) {
+                        throw ValidationException::withMessages([
+                            "items.{$productId}" => ['Product stock changed. Please validate your cart again.'],
+                        ]);
+                    }
+                }
+
+                $checkoutStep = 'load_order_detail';
+
+                return $order->load('orderItems.product');
+            }, 3);
+        } catch (QueryException $exception) {
+            $this->logCheckoutQueryException(
+                $exception,
+                $request,
+                $checkoutStep,
+                $validated['items'],
+                $idempotencyKey
+            );
+
+            return response()->json([
+                'message' => 'Unable to create order. Please try again.',
+                'request_id' => $request->attributes->get('request_id'),
+            ], 500);
+        }
 
     private function findIdempotentOrder(string $userId, string $idempotencyKey): ?Order
     {
@@ -208,6 +190,31 @@ class OrderController extends Controller
     {
         return DB::getDriverName() === 'pgsql'
             && (string) $e->getCode() === '25P02';
+    }
+
+    private function logCheckoutQueryException(
+        QueryException $exception,
+        Request $request,
+        string $checkoutStep,
+        array $items,
+        string $idempotencyKey
+    ): void {
+        $errorInfo = $exception->errorInfo ?? [];
+
+        Log::channel('api_errors')->error('Checkout database query failed.', [
+            'request_id' => $request->attributes->get('request_id'),
+            'checkout_step' => $checkoutStep,
+            'sqlstate' => $errorInfo[0] ?? $exception->getCode(),
+            'driver_error_code' => $errorInfo[1] ?? null,
+            'driver_error_message' => $errorInfo[2] ?? null,
+            'idempotency_key' => $idempotencyKey,
+            'product_ids' => array_map(
+                fn (array $item) => $item['product_id'] ?? null,
+                $items
+            ),
+            'user_id' => $request->user()?->getAuthIdentifier(),
+            'message' => $exception->getMessage(),
+        ]);
     }
 
     public function show(Request $request, string $id): JsonResponse
