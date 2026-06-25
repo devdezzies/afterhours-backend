@@ -2,12 +2,19 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    public $withinTransaction = false;
+
     public function up(): void
     {
+        if (! Schema::hasTable('users') || ! Schema::hasTable('orders')) {
+            return;
+        }
+
         if (! Schema::hasColumn('users', 'phone_number')) {
             Schema::table('users', fn (Blueprint $table) => $table->string('phone_number', 30)->nullable());
         }
@@ -46,10 +53,11 @@ return new class extends Migration
             Schema::table('orders', fn (Blueprint $table) => $table->string('idempotency_key', 100)->nullable());
         }
 
-        if (! Schema::hasIndex('orders', ['user_id', 'idempotency_key'])) {
-            Schema::table('orders', function (Blueprint $table) {
-                $table->unique(['user_id', 'idempotency_key']);
-            });
+        if (
+            Schema::hasColumn('orders', 'user_id')
+            && Schema::hasColumn('orders', 'idempotency_key')
+        ) {
+            $this->ensureOrderIdempotencyIndex();
         }
 
         if (Schema::hasColumn('orders', 'shipping_lat')) {
@@ -62,8 +70,14 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (! Schema::hasTable('users') || ! Schema::hasTable('orders')) {
+            return;
+        }
+
         Schema::table('orders', function (Blueprint $table) {
-            $table->dropUnique(['user_id', 'idempotency_key']);
+            if (Schema::hasIndex('orders', ['user_id', 'idempotency_key'])) {
+                $table->dropUnique(['user_id', 'idempotency_key']);
+            }
             $table->dropColumn([
                 'shipping_city',
                 'shipping_country_region',
@@ -84,5 +98,22 @@ return new class extends Migration
                 'address_lng',
             ]);
         });
+    }
+
+    private function ensureOrderIdempotencyIndex(): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement(
+                'CREATE UNIQUE INDEX IF NOT EXISTS orders_user_id_idempotency_key_unique ON orders (user_id, idempotency_key)'
+            );
+
+            return;
+        }
+
+        if (! Schema::hasIndex('orders', ['user_id', 'idempotency_key'])) {
+            Schema::table('orders', function (Blueprint $table) {
+                $table->unique(['user_id', 'idempotency_key']);
+            });
+        }
     }
 };

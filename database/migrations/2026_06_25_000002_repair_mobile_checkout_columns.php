@@ -7,8 +7,14 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    public $withinTransaction = false;
+
     public function up(): void
     {
+        if (! Schema::hasTable('users') || ! Schema::hasTable('orders')) {
+            return;
+        }
+
         $this->addUserColumn(
             'phone_number',
             fn (Blueprint $table) => $table->string('phone_number', 30)->nullable()
@@ -59,10 +65,11 @@ return new class extends Migration
             fn (Blueprint $table) => $table->string('idempotency_key', 100)->nullable()
         );
 
-        if (! Schema::hasIndex('orders', ['user_id', 'idempotency_key'])) {
-            Schema::table('orders', function (Blueprint $table) {
-                $table->unique(['user_id', 'idempotency_key']);
-            });
+        if (
+            Schema::hasColumn('orders', 'user_id')
+            && Schema::hasColumn('orders', 'idempotency_key')
+        ) {
+            $this->ensureOrderIdempotencyIndex();
         }
 
         if (
@@ -87,15 +94,32 @@ return new class extends Migration
 
     private function addUserColumn(string $column, callable $definition): void
     {
-        if (! Schema::hasColumn('users', $column)) {
+        if (Schema::hasTable('users') && ! Schema::hasColumn('users', $column)) {
             Schema::table('users', $definition);
         }
     }
 
     private function addOrderColumn(string $column, callable $definition): void
     {
-        if (! Schema::hasColumn('orders', $column)) {
+        if (Schema::hasTable('orders') && ! Schema::hasColumn('orders', $column)) {
             Schema::table('orders', $definition);
+        }
+    }
+
+    private function ensureOrderIdempotencyIndex(): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement(
+                'CREATE UNIQUE INDEX IF NOT EXISTS orders_user_id_idempotency_key_unique ON orders (user_id, idempotency_key)'
+            );
+
+            return;
+        }
+
+        if (! Schema::hasIndex('orders', ['user_id', 'idempotency_key'])) {
+            Schema::table('orders', function (Blueprint $table) {
+                $table->unique(['user_id', 'idempotency_key']);
+            });
         }
     }
 };

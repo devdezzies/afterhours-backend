@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +83,60 @@ class OrderController extends Controller
             ]);
         }
 
-        $order = DB::transaction(function () use ($validated, $user, $idempotencyKey) {
+        try {
+            $result = $this->createOrder($validated, $user, $idempotencyKey);
+        } catch (UniqueConstraintViolationException) {
+            $order = $this->findIdempotentOrder($user->id, $idempotencyKey);
+
+            if ($order) {
+                return response()->json([
+                    'data' => $this->formatOrderDetail($order),
+                    'idempotent_replay' => true,
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'idempotency_key' => ['This idempotency key has already been used.'],
+            ]);
+        }
+
+        return response()->json([
+            'data' => $this->formatOrderDetail($result['order']),
+            'idempotent_replay' => $result['idempotent_replay'],
+        ], $result['idempotent_replay'] ? 200 : 201);
+    }
+
+    private function createOrder(array $validated, $user, string $idempotencyKey): array
+    {
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                return $this->createOrderInTransaction($validated, $user, $idempotencyKey);
+            } catch (QueryException $e) {
+                if ($attempt === 0 && $this->isAbortedPostgresTransaction($e)) {
+                    DB::disconnect();
+
+                    continue;
+                }
+
+                throw $e;
+            }
+        }
+
+        throw new \RuntimeException('Unable to create order after retry.');
+    }
+
+    private function createOrderInTransaction(array $validated, $user, string $idempotencyKey): array
+    {
+        return DB::transaction(function () use ($validated, $user, $idempotencyKey) {
+            $existing = $this->findIdempotentOrder($user->id, $idempotencyKey);
+
+            if ($existing) {
+                return [
+                    'order' => $existing,
+                    'idempotent_replay' => true,
+                ];
+            }
+
             $requested = collect($validated['items'])->keyBy('product_id');
             $products = Product::whereIn('id', $requested->keys())
                 ->lockForUpdate()
@@ -134,13 +189,25 @@ class OrderController extends Controller
                 $product->decrement('stock', (int) $item['quantity']);
             }
 
-            return $order->load('orderItems.product');
-        }, 3);
+            return [
+                'order' => $order->load('orderItems.product'),
+                'idempotent_replay' => false,
+            ];
+        });
+    }
 
-        return response()->json([
-            'data' => $this->formatOrderDetail($order),
-            'idempotent_replay' => false,
-        ], 201);
+    private function findIdempotentOrder(string $userId, string $idempotencyKey): ?Order
+    {
+        return Order::where('user_id', $userId)
+            ->where('idempotency_key', $idempotencyKey)
+            ->with('orderItems.product')
+            ->first();
+    }
+
+    private function isAbortedPostgresTransaction(QueryException $e): bool
+    {
+        return DB::getDriverName() === 'pgsql'
+            && (string) $e->getCode() === '25P02';
     }
 
     public function show(Request $request, string $id): JsonResponse

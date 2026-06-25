@@ -74,6 +74,15 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $e->getMessage(),
             ], $extra);
 
+            if ($e instanceof \Illuminate\Database\QueryException) {
+                $previous = $e->getPrevious();
+
+                $context['sql_state'] = (string) $e->getCode();
+                $context['previous_exception'] = $previous ? $previous::class : null;
+                $context['previous_code'] = $previous ? (string) $previous->getCode() : null;
+                $context['previous_message'] = $previous?->getMessage();
+            }
+
             if (!app()->isProduction()) {
                 $context['trace'] = $e->getTraceAsString();
             }
