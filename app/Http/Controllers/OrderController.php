@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -177,10 +178,18 @@ class OrderController extends Controller
             ], 500);
         }
 
-        return response()->json([
-            'data' => $this->formatOrderDetail($order),
-            'idempotent_replay' => false,
-        ], 201);
+    private function findIdempotentOrder(string $userId, string $idempotencyKey): ?Order
+    {
+        return Order::where('user_id', $userId)
+            ->where('idempotency_key', $idempotencyKey)
+            ->with('orderItems.product')
+            ->first();
+    }
+
+    private function isAbortedPostgresTransaction(QueryException $e): bool
+    {
+        return DB::getDriverName() === 'pgsql'
+            && (string) $e->getCode() === '25P02';
     }
 
     private function logCheckoutQueryException(

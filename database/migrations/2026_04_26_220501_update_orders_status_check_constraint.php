@@ -2,12 +2,15 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    public $withinTransaction = false;
+
     public function up(): void
     {
-        if (DB::getDriverName() !== 'pgsql') {
+        if (DB::getDriverName() !== 'pgsql' || ! Schema::hasTable('orders')) {
             return;
         }
         DB::statement('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
@@ -16,7 +19,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (DB::getDriverName() !== 'pgsql') {
+        if (DB::getDriverName() !== 'pgsql' || ! Schema::hasTable('orders')) {
             return;
         }
         DB::statement('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
