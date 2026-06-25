@@ -10,7 +10,7 @@ return new class extends Migration
         if (DB::getDriverName() !== 'pgsql') {
             return;
         }
-        DB::statement('ALTER TABLE orders DROP CONSTRAINT orders_status_check');
+        DB::statement('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
         DB::statement("ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status::text = ANY (ARRAY['pending'::varchar, 'processing'::varchar, 'shipped'::varchar, 'delivered'::varchar, 'cancelled'::varchar]::text[]))");
     }
 
@@ -19,7 +19,7 @@ return new class extends Migration
         if (DB::getDriverName() !== 'pgsql') {
             return;
         }
-        DB::statement('ALTER TABLE orders DROP CONSTRAINT orders_status_check');
+        DB::statement('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
         DB::statement("ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status::text = ANY (ARRAY['pending'::varchar, 'shipped'::varchar, 'delivered'::varchar]::text[]))");
     }
 };
